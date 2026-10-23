@@ -8,11 +8,15 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CveRecord {
     pub id: String,
     pub product: String,
     pub versions: Vec<String>,
+    #[serde(default)]
+    pub cvss_score: Option<f32>,
+    #[serde(default)]
+    pub cvss_severity: Option<String>,
 }
 
 const TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("cves_by_product");
@@ -30,6 +34,7 @@ impl CveDatabase {
         Ok(Self { db })
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub fn ingest_json_feed(&mut self, feed_json: &str) -> Result<()> {
         let root: Value = serde_json::from_str(feed_json)?;
         let Some(items) = root.get("CVE_Items").and_then(Value::as_array) else {
@@ -50,6 +55,20 @@ impl CveDatabase {
             if id.is_empty() {
                 continue;
             }
+
+            let cvss_score = item
+                .get("impact")
+                .and_then(|i| i.get("baseMetricV3"))
+                .and_then(|bm| bm.get("cvssV3"))
+                .and_then(|cvss| cvss.get("baseScore"))
+                .and_then(|s| s.as_f64().map(|f| f as f32));
+
+            let cvss_severity = item
+                .get("impact")
+                .and_then(|i| i.get("baseMetricV3"))
+                .and_then(|bm| bm.get("cvssV3"))
+                .and_then(|cvss| cvss.get("baseSeverity"))
+                .and_then(|s| s.as_str().map(ToString::to_string));
 
             let nodes = item
                 .get("configurations")
@@ -82,6 +101,8 @@ impl CveDatabase {
                                         id: id.clone(),
                                         product,
                                         versions: vec![version],
+                                        cvss_score,
+                                        cvss_severity: cvss_severity.clone(),
                                     });
                                 }
                             }
@@ -162,6 +183,14 @@ mod tests {
                                 ]
                             }
                         ]
+                    },
+                    "impact": {
+                        "baseMetricV3": {
+                            "cvssV3": {
+                                "baseScore": 9.8,
+                                "baseSeverity": "CRITICAL"
+                            }
+                        }
                     }
                 }
             ]
@@ -178,6 +207,8 @@ mod tests {
                 id: "CVE-2023-1234".to_string(),
                 product: "mock_product".to_string(),
                 versions: vec!["1.0".to_string(), "1.1".to_string()],
+                cvss_score: Some(9.8),
+                cvss_severity: Some("CRITICAL".to_string()),
             }
         );
     }

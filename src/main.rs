@@ -2,6 +2,7 @@
 #![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
 
 pub mod cpe_match;
+pub mod graph_builder;
 
 mod cli;
 mod whitelist;
@@ -48,12 +49,15 @@ pub fn main() -> anyhow::Result<()> {
     }
 
     let app = app::App::new(&db, whitelist.as_ref());
-    let results = app.scan_paths(&paths_to_scan)?;
+    let graph_data = app.build_graph(&paths_to_scan)?;
 
-    for res in results {
-        println!("{} {}: {:?}", res.pname, res.version, res.cves);
-    }
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(server::start_server(3000, graph_data))?;
 
     Ok(())
 }
 
+mod server;

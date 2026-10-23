@@ -19,7 +19,7 @@ impl<'a> Scanner<'a> {
         pname: &str,
         version: &str,
         candidates: &[CveRecord],
-    ) -> Vec<String> {
+    ) -> Vec<CveRecord> {
         let mut matched = Vec::new();
 
         for candidate in candidates {
@@ -51,7 +51,7 @@ impl<'a> Scanner<'a> {
                 }
 
                 if !whitelisted {
-                    matched.push(candidate.id.clone());
+                    matched.push(candidate.clone());
                 }
             }
         }
@@ -74,11 +74,14 @@ mod tests {
                 id: "CVE-2023-1234".to_string(),
                 product: "bash".to_string(),
                 versions: vec!["1.0".to_string()],
+                cvss_score: None,
+                cvss_severity: None,
             }
         ];
         
         let matched = scanner.match_vulnerabilities("bash", "1.0", &candidates);
-        assert_eq!(matched, vec!["CVE-2023-1234".to_string()]);
+        assert_eq!(matched.len(), 1);
+        assert_eq!(matched[0].id, "CVE-2023-1234");
     }
 
     #[test]
@@ -100,6 +103,8 @@ mod tests {
                 id: "CVE-2023-1234".to_string(),
                 product: "bash".to_string(),
                 versions: vec!["1.0".to_string()],
+                cvss_score: None,
+                cvss_severity: None,
             }
         ];
         

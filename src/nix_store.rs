@@ -12,11 +12,14 @@ static NAME_VERSION_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(\S+?)-([0-9]\S*)$").expect("Regex should compile"));
 
 #[must_use]
-pub fn split_name_version(name: &str) -> Option<(&str, &str)> {
-    let caps = NAME_VERSION_RE.captures(name)?;
-    let pname = caps.get(1)?.as_str();
-    let version = caps.get(2)?.as_str();
-    Some((pname, version))
+pub fn split_name_version(name: &str) -> (&str, &str) {
+    if let Some(caps) = NAME_VERSION_RE.captures(name) {
+        let pname = caps.get(1).map_or(name, |m| m.as_str());
+        let version = caps.get(2).map_or("", |m| m.as_str());
+        (pname, version)
+    } else {
+        (name, "")
+    }
 }
 
 pub fn extract_derivation_name(content: &[u8]) -> Result<String> {
@@ -36,16 +39,35 @@ pub struct DerivationInfo {
     pub pname: String,
     pub version: String,
     pub drv_path: PathBuf,
+    pub edges: Vec<PathBuf>,
 }
 
 pub fn parse_derivation(path: &Path) -> Result<DerivationInfo> {
     let content = std::fs::read(path).with_context(|| format!("Failed to read {}", path.display()))?;
-    let name = extract_derivation_name(&content)?;
-    let (pname, version) = split_name_version(&name).context("Could not split name into pname and version")?;
+    let drv = Derivation::from_aterm_bytes(&content, "drv")
+        .map_err(|e| anyhow::anyhow!("Failed to parse derivation at {}: {e:?}", path.display()))?;
+
+    let name = drv
+        .environment()
+        .get("name")
+        .map_or_else(
+            || path.file_name().unwrap_or_default().to_string_lossy().into_owned(),
+            |b| String::from_utf8_lossy(b).into_owned()
+        );
+
+
+    let (pname, version) = split_name_version(&name);
+    
+    let edges: Vec<PathBuf> = drv.input_derivations()
+        .keys()
+        .map(|k| PathBuf::from(k.to_string()))
+        .collect();
+
     Ok(DerivationInfo {
         pname: pname.to_string(),
         version: version.to_string(),
         drv_path: path.to_path_buf(),
+        edges,
     })
 }
 
@@ -101,6 +123,7 @@ mod tests {
                 pname: "bash".to_string(),
                 version: "5.2-p15".to_string(),
                 drv_path: drv_path.clone(),
+                edges: vec![],
             }
         );
 
@@ -112,25 +135,25 @@ mod tests {
     fn test_split_name_version() {
         assert_eq!(
             split_name_version("bash-5.2-p15"),
-            Some(("bash", "5.2-p15"))
+            ("bash", "5.2-p15")
         );
         assert_eq!(
             split_name_version("openssl-1.1.1u"),
-            Some(("openssl", "1.1.1u"))
+            ("openssl", "1.1.1u")
         );
         assert_eq!(
             split_name_version("some-package-name-with-dashes-1.2.3"),
-            Some(("some-package-name-with-dashes", "1.2.3"))
+            ("some-package-name-with-dashes", "1.2.3")
         );
 
         // No version
-        assert_eq!(split_name_version("just-a-name"), None);
+        assert_eq!(split_name_version("just-a-name"), ("just-a-name", ""));
 
         // Edge cases
-        assert_eq!(split_name_version("pkg-0"), Some(("pkg", "0")));
-        assert_eq!(split_name_version("pkg-0.1"), Some(("pkg", "0.1")));
-        assert_eq!(split_name_version("a-1"), Some(("a", "1")));
-        assert_eq!(split_name_version("invalidversion-"), None);
+        assert_eq!(split_name_version("pkg-0"), ("pkg", "0"));
+        assert_eq!(split_name_version("pkg-0.1"), ("pkg", "0.1"));
+        assert_eq!(split_name_version("a-1"), ("a", "1"));
+        assert_eq!(split_name_version("invalidversion-"), ("invalidversion-", ""));
     }
 
     #[test]

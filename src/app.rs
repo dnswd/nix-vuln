@@ -5,52 +5,49 @@ use anyhow::Result;
 use std::path::PathBuf;
 use crate::cve_db::CveDatabase;
 use crate::whitelist::Whitelist;
+use crate::graph_builder::GraphData;
 
 pub struct App<'a> {
     pub db: &'a CveDatabase,
     pub whitelist: Option<&'a Whitelist>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct ScanResult {
-    pub pname: String,
-    pub version: String,
-    pub cves: Vec<String>,
-}
-
 impl<'a> App<'a> {
     pub fn new(db: &'a CveDatabase, whitelist: Option<&'a Whitelist>) -> Self {
         Self { db, whitelist }
     }
-    #[allow(clippy::unnecessary_wraps)]
-    pub fn scan_paths(&self, paths: &[PathBuf]) -> Result<Vec<ScanResult>> {
-        let mut results = Vec::new();
+
+    pub fn build_graph(&self, paths: &[PathBuf]) -> Result<GraphData> {
+        let mut derivations = std::collections::HashMap::new();
+        let mut vulnerabilities = std::collections::HashMap::new();
 
         for path in paths {
-            let info = match crate::nix_store::parse_derivation(path) {
-                Ok(i) => i,
-                Err(e) => {
-                    println!("Failed to parse: {e}");
-                    continue;
-                }
+            let Ok(info) = crate::nix_store::parse_derivation(path) else {
+                continue;
             };
 
-            if let Ok(candidates) = self.db.query_by_product(&info.pname)
+            let pname = info.pname.clone();
+            let version = info.version.clone();
+            derivations.insert(path.clone(), info);
+
+            if let Ok(candidates) = self.db.query_by_product(&pname)
                 && !candidates.is_empty()
             {
                     let scanner = crate::scanner::Scanner::new(self.whitelist);
-                    let matched_cves = scanner.match_vulnerabilities(&info.pname, &info.version, &candidates);
-                    if !matched_cves.is_empty() {
-                        results.push(ScanResult {
-                            pname: info.pname,
-                            version: info.version,
-                            cves: matched_cves,
-                        });
+                    let matched = scanner.match_vulnerabilities(&pname, &version, &candidates);
+                    if !matched.is_empty() {
+                        vulnerabilities.insert(path.clone(), matched);
                     }
             }
         }
 
-        Ok(results)
+        if paths.is_empty() {
+            anyhow::bail!("paths cannot be empty");
+        }
+
+        let root = paths.last().unwrap();
+        let graph = crate::graph_builder::build_graph(root, &derivations, &vulnerabilities);
+        Ok(graph)
     }
 }
 
@@ -60,10 +57,11 @@ mod tests {
     use tempfile::tempdir;
     use std::fs;
 
+
     #[test]
-    fn test_scan_paths() -> Result<()> {
+    fn test_build_graph() -> Result<()> {
         let dir = tempdir()?;
-        let db_path = dir.path().join("cves.db");
+        let db_path = dir.path().join("cves2.db");
         let mut db = CveDatabase::open(&db_path)?;
 
         let nvd_json = r#"{
@@ -84,6 +82,14 @@ mod tests {
                                 ]
                             }
                         ]
+                    },
+                    "impact": {
+                        "baseMetricV3": {
+                            "cvssV3": {
+                                "baseScore": 7.5,
+                                "baseSeverity": "HIGH"
+                            }
+                        }
                     }
                 }
             ]
@@ -92,20 +98,15 @@ mod tests {
         db.ingest_json_feed(nvd_json)?;
 
         let drv_path = dir.path().join("bash-1.0.drv");
-        // Derivation with pname bash and version 1.0
         fs::write(&drv_path, r#"Derive([("out","/nix/store/11111111111111111111111111111111-bash-1.0","","")],[],[],"x86_64-linux","/nix/store/11111111111111111111111111111111-builder.sh",[],[("name","bash-1.0"),("out","/nix/store/11111111111111111111111111111111-bash-1.0")])"#)?;
 
         let app = App::new(&db, None);
-        let result = app.scan_paths(&[drv_path])?;
+        let graph = app.build_graph(&[drv_path])?;
 
-        assert_eq!(result, vec![
-            ScanResult {
-                pname: "bash".into(),
-                version: "1.0".into(),
-                cves: vec!["CVE-2023-1234".into()],
-            }
-        ]);
+        assert_eq!(graph.nodes.len(), 1);
+        assert_eq!(graph.nodes[0].color, "DarkRed");
 
         Ok(())
     }
+
 }

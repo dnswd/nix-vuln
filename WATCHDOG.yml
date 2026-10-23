@@ -1,0 +1,3 @@
+advisors:
+  - name: default
+    model: google-vertex/gemini-2.5-flash-lite
