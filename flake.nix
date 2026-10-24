@@ -15,6 +15,16 @@
         
         # Read Cargo.toml to get package name and version
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
+        frontend = pkgs.buildNpmPackage {
+          pname = "nix-vuln-frontend";
+          version = cargoToml.package.version;
+          src = ./frontend;
+          npmDepsHash = "sha256-BLUjkjuXNDExvYc8dnW+ZPQmtd9NNqRSMHQKOfqVA0Q=";
+          installPhase = ''
+            mkdir -p $out
+            cp -r dist/* $out/
+          '';
+        };
       in
       {
         packages.default = pkgs.rustPlatform.buildRustPackage {
@@ -24,6 +34,12 @@
           cargoLock = {
             lockFile = ./Cargo.lock;
           };
+          preBuild = ''
+            mkdir -p frontend/dist
+            cp -r ${frontend}/* frontend/dist/
+          '';
+          SKIP_NPM_BUILD = "1";
+          doCheck = false;
           nativeBuildInputs = with pkgs; [ pkg-config ];
           buildInputs = with pkgs; [ openssl ];
         };
@@ -36,6 +52,8 @@
             clippy
             pkg-config
             openssl.dev
+            just
+            cargo-watch
           ];
         };
       }

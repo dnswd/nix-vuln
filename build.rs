@@ -16,6 +16,10 @@ fn main() {
         return;
     }
 
+    if env::var("SKIP_NPM_BUILD").unwrap_or_default() == "1" {
+        return;
+    }
+
     let status = Command::new("npm")
         .arg("install")
         .current_dir(&frontend_dir)
