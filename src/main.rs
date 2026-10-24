@@ -40,11 +40,23 @@ pub fn main() -> anyhow::Result<()> {
     };
 
     let mut paths_to_scan = cli.paths;
-    if paths_to_scan.is_empty() && !cli.system && cli.profile.is_none() && !cli.gc_roots {
+    if cli.system {
+        paths_to_scan.push(std::path::PathBuf::from("/nix/var/nix/gcroots/current-system"));
+    }
+
+    if let Some(profile_path) = cli.profile {
+        paths_to_scan.push(std::path::PathBuf::from(profile_path));
+    }
+
+    if cli.gc_roots {
+        paths_to_scan.push(std::path::PathBuf::from("/nix/var/nix/gcroots"));
+    }
+
+    if paths_to_scan.is_empty() {
         println!("Warning: No paths or targets provided for scanning.");
     }
 
-    if cli.closure {
+    if cli.closure || cli.requisites {
         paths_to_scan = nix_store::resolve_closure(&paths_to_scan)?;
     }
 
