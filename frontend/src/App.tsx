@@ -1,6 +1,5 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
-import './App.css';
 
 type Node = {
   id: string;
@@ -22,14 +21,34 @@ type GraphData = {
   links: Link[];
 };
 
+function useElementSize<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setSize({ width, height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  return [ref, size] as const;
+}
+
 function App() {
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
   const [focusedNode, setFocusedNode] = useState<Node | null>(null);
   const [retainedNodes, setRetainedNodes] = useState<Set<string>>(new Set());
   const [retainChecked, setRetainChecked] = useState(false);
+  const [showLabels, setShowLabels] = useState(true);
+  const [containerRef, { width, height }] = useElementSize<HTMLDivElement>();
 
   useEffect(() => {
-    fetch('/api/graph')
+    fetch('http://localhost:3000/api/graph')
       .then(res => res.json())
       .then((data: GraphData) => setGraphData(data))
       .catch(err => console.error("Failed to fetch graph:", err));
@@ -73,7 +92,7 @@ function App() {
 
   const { visibleNodes, visibleLinks } = useMemo(() => {
     const visibleIds = new Set<string>();
-    
+
     const nodes = graphData.nodes.filter(n => {
       if (n.color !== 'White') {
         visibleIds.add(n.id);
@@ -127,34 +146,54 @@ function App() {
   };
 
   return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
-      <ForceGraph2D
-        graphData={{ nodes: visibleNodes, links: visibleLinks }}
-        nodeCanvasObject={(node, ctx, globalScale) => {
-          // Assume node is of type Node
-          const n = node as Node;
-          const isRevealedOnly = n.color === 'White' && !retainedNodes.has(n.id) && revealedNodeIds.has(n.id);
-          const color = isRevealedOnly ? 'rgba(200,200,200,0.3)' : n.color;
-          
-          const size = 5;
-          ctx.beginPath();
-          ctx.arc(n.x!, n.y!, size, 0, 2 * Math.PI, false);
-          ctx.fillStyle = color;
-          ctx.fill();
-          ctx.strokeStyle = '#333';
-          ctx.stroke();
+    <div ref={containerRef} style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
+      {width > 0 &&
+        <ForceGraph2D
+          width={width}
+          height={height}
+          graphData={{ nodes: visibleNodes, links: visibleLinks }}
+          nodeCanvasObject={(node, ctx, globalScale) => {
+            // Assume node is of type Node
+            const n = node as Node;
+            const isRevealedOnly = n.color === 'White' && !retainedNodes.has(n.id) && revealedNodeIds.has(n.id);
+            const color = isRevealedOnly ? 'rgba(200,200,200,0.3)' : n.color;
 
-          const label = n.label;
-          const fontSize = 12 / globalScale;
-          ctx.font = `${fontSize}px Sans-Serif`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'top';
-          ctx.fillStyle = isRevealedOnly ? 'rgba(0,0,0,0.5)' : '#000';
-          ctx.fillText(label, n.x!, n.y! + size + 2);
-        }}
-        onNodeClick={(node) => handleNodeClick(node as Node)}
-      />
-      
+            const size = 5;
+            ctx.beginPath();
+            ctx.arc(n.x!, n.y!, size, 0, 2 * Math.PI, false);
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.strokeStyle = '#333';
+            ctx.stroke();
+
+            if (!showLabels) return;
+
+            const label = n.label;
+            const fontSize = 12 / globalScale;
+            ctx.font = `${fontSize}px Sans-Serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillStyle = isRevealedOnly ? 'rgba(0,0,0,0.5)' : 'rgba(200,200,200, 0.5)';
+            ctx.fillText(label, n.x!, n.y! + size + 2);
+          }}
+          onNodeClick={(node) => handleNodeClick(node as Node)}
+          linkDirectionalArrowLength={3.5}
+          backgroundColor='rgb(18,18,18)'
+          linkColor={() => 'rgba(255,255,255,0.05)'}
+          linkDirectionalArrowColor={() => 'rgba(255,255,255,0.6)'}
+          dagMode='td'
+        />}
+
+      <div
+        style={{ position: 'absolute', bottom: 20, left: '50%', zIndex: 10 }}
+      >
+        <button
+          onClick={() => setShowLabels(s => !s)}
+        >
+          {showLabels ? 'Hide labels' : 'Show labels'}
+        </button>
+      </div>
+
       {graphData.nodes.length > 0 && visibleNodes.length === 0 && (
         <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', background: 'rgba(255,255,255,0.9)', padding: '20px', borderRadius: '8px', zIndex: 10 }}>
           <h2>🎉 All {graphData.nodes.length} derivations are safe!</h2>
@@ -181,14 +220,14 @@ function App() {
         }}>
           <button onClick={handleClosePanel} style={{ float: 'right' }}>X</button>
           <h2>{focusedNode.label}</h2>
-          
+
           <div style={{ marginBottom: '20px' }}>
             <label>
               <input type="checkbox" checked={retainChecked} onChange={handleRetainToggle} />
               Retain adjacent node view
             </label>
           </div>
-          
+
           <p>
             <a href={`https://lazamar.co.uk/nix-versions/?channel=nixpkgs-unstable&package=${focusedNode.label.split('-')[0]}`} target="_blank" rel="noreferrer">
               Search nix-versions

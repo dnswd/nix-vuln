@@ -12,7 +12,7 @@ By parsing `.drv` files safely without relying on Nix `eval`, `nix-vuln` builds 
 - **Transitive Risk Calculation**: Identifies both direct vulnerabilities and highlights upstream risks ("Gray" nodes in the graph) to show how an exploit trickles down to your application.
 
 ## Usage Guide
-### Quickstart (No clone required)
+### Quickstart
 
 You can run `nix-vuln` instantly directly from GitHub without cloning the repository:
 

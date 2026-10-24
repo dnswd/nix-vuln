@@ -1,14 +1,15 @@
+use crate::graph_builder::GraphData;
 use axum::{
+    Json, Router,
     body::Body,
     extract::State,
-    http::{header, StatusCode, Uri},
+    http::{StatusCode, Uri, header},
     response::{IntoResponse, Response},
     routing::get,
-    Json, Router,
 };
 use rust_embed::RustEmbed;
 use std::sync::Arc;
-use crate::graph_builder::GraphData;
+use tower_http::cors::CorsLayer;
 
 #[derive(RustEmbed)]
 #[folder = "frontend/dist"]
@@ -19,6 +20,7 @@ pub fn app(graph: Arc<GraphData>) -> Router {
         .route("/api/graph", get(api_graph))
         .fallback(static_handler)
         .with_state(graph)
+        .layer(CorsLayer::permissive()) // Disable CORS for dev
 }
 
 pub async fn start_server(port: u16, graph_data: GraphData) -> anyhow::Result<()> {
@@ -63,12 +65,10 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
                             .body(Body::from(content.data))
                             .unwrap()
                     }
-                    None => {
-                        Response::builder()
-                            .status(StatusCode::NOT_FOUND)
-                            .body(Body::from("404 Not Found"))
-                            .unwrap()
-                    }
+                    None => Response::builder()
+                        .status(StatusCode::NOT_FOUND)
+                        .body(Body::from("404 Not Found"))
+                        .unwrap(),
                 }
             }
         }
@@ -78,10 +78,10 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::graph_builder::{GraphData, Link, Node};
+    use axum::body::to_bytes;
     use axum::http::Request;
     use tower::ServiceExt;
-    use crate::graph_builder::{GraphData, Node, Link};
-    use axum::body::to_bytes;
 
     #[tokio::test]
     async fn test_api_graph() {
@@ -95,7 +95,7 @@ mod tests {
             links: vec![],
         };
         let app = app(Arc::new(graph_data.clone()));
-        
+
         let response = app
             .oneshot(
                 Request::builder()
