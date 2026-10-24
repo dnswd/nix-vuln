@@ -58,6 +58,25 @@ DRV_PATH=$(nix path-info --derivation .)
 
 This command analyzes the closure and boots an Axum server on `http://127.0.0.1:3000`. Open this address in your browser to explore the interactive dependency graph and investigate any detected vulnerabilities!
 
+### 3. Target Shortcuts
+
+Instead of manually finding derivation paths, `nix-vuln` provides shortcuts to scan common targets on your machine (note that you still pass `-C` or `--closure` to resolve their dependencies):
+
+**Scan your entire live NixOS System:**
+```bash
+nix run . -- -S -C
+```
+
+**Scan a specific profile:**
+```bash
+nix run . -- -p /nix/var/nix/profiles/system-10-link -C
+```
+
+**Scan all live GC Roots:**
+```bash
+nix run . -- --gc-roots -C
+```
+
 ## Contributing
 
 `nix-vuln` uses [`just`](https://github.com/casey/just) as a command runner to automate the development workflow. 
