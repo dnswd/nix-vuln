@@ -33,7 +33,7 @@ nix run github:dnswd/nix-vuln -- --closure /nix/store/...-your-derivation.drv
 
 ### 1. Ingesting Data
 
-Before analyzing a derivation, `nix-vuln` needs vulnerability data. You can download the NVD CVE feeds (e.g., from the [nix-community/nvd-cve-feeds](https://github.com/nix-community/nvd-cve-feeds) repository).
+Before analyzing a derivation, `nix-vuln` needs vulnerability data. You can download the NVD CVE feeds (e.g., from the [NVD data feed](https://nvd.nist.gov/vuln/data-feeds) repository).
 
 ```bash
 # Using nix run (preferred):
