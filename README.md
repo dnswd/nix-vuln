@@ -21,7 +21,10 @@ By parsing `.drv` files safely without relying on Nix `eval`, `nix-vuln` builds 
 Before analyzing a derivation, `nix-vuln` needs vulnerability data. You can download the NVD CVE feeds (e.g., from the [nix-community/nvd-cve-feeds](https://github.com/nix-community/nvd-cve-feeds) repository).
 
 ```bash
-# Ingest NVD feeds into the database
+# Using nix run (preferred):
+nix run . -- --ingest nvdcve-1.1-*.json
+
+# Or running the compiled binary directly:
 ./target/release/nix-vuln --ingest nvdcve-1.1-*.json
 ```
 
@@ -30,10 +33,11 @@ Before analyzing a derivation, `nix-vuln` needs vulnerability data. You can down
 Once the vulnerability data is ingested, you can scan a derivation. For example, to scan your current Flake:
 
 ```bash
-# Get the derivation path for your flake
-DRV_PATH=$(nix path-info --derivation .)
+# Using nix run (preferred):
+nix run . -- --closure $(nix path-info --derivation .)
 
-# Run the scanner on the derivation closure
+# Or running the compiled binary directly:
+DRV_PATH=$(nix path-info --derivation .)
 ./target/release/nix-vuln --closure $DRV_PATH
 ```
 
@@ -60,10 +64,11 @@ just setup
 To start a development environment with integrated hot-reloading for both the Rust backend and the React frontend:
 
 ```bash
-just dev
+just dev-backend
+just dev-frontend
 ```
 
-Other available commands include `just dev-frontend`, `just dev-backend`, and `just build`. Check the `Justfile` for a complete list.
+Check the `Justfile` for a complete list.
 
 ### Architecture Overview
 
